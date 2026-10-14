@@ -133,6 +133,7 @@ def test_verified_runtime_detects_same_size_asset_changes(tmp_path):
         path.write_bytes(b'fixture')
         entries.append({'path': name, 'size': 7, 'mtime_ns': path.stat().st_mtime_ns})
     (tmp_path / 'runtime.json').write_text(json.dumps({'verified': True, 'runtime_release': 'v0.9.1',
+        'runtime_variant': 'cpu-portable',
         'model_revision': 'cca74d8980c00f30ab8d52248a367c01ad633ec2', 'files': entries}))
     assert runtime.health()['models_initialized'] is True
     asset = tmp_path / names[1]

@@ -14,7 +14,15 @@ from .yue2_score import instrumental_score
 def atomic_json(path, value):
     temp = path.with_suffix('.tmp')
     temp.write_text(json.dumps(value), encoding='utf-8')
-    temp.replace(path)
+    # Windows readers can briefly deny replacement while holding the destination.
+    for attempt in range(10):
+        try:
+            temp.replace(path)
+            return
+        except PermissionError:
+            if attempt == 9:
+                raise
+            time.sleep(min(.02 * 2 ** attempt, .1))
 
 
 class Cancelled(Exception):

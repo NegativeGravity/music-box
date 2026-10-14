@@ -107,7 +107,7 @@ def test_default_ai_start_uses_yue2_worker_without_loading_ace_step(runtime):
     yue = runtime / '.data/ai-music/yue2'
     (yue / 'runtime').mkdir(parents=True)
     (yue / 'runtime/audiocpp_cli.exe').touch()
-    (yue / 'runtime.json').write_text('{"verified":true,"engine":"yue2","runtime_release":"v0.9.1","model_revision":"cca74d8980c00f30ab8d52248a367c01ad633ec2"}')
+    (yue / 'runtime.json').write_text('{"verified":true,"engine":"yue2","runtime_release":"v0.9.1","runtime_variant":"cpu-portable","model_revision":"cca74d8980c00f30ab8d52248a367c01ad633ec2"}')
     result = shell(runtime, MOCK_START + "\n. ./scripts/start.ps1 -Dev -WithAiMusic\n$global:musicTestStarted | ConvertTo-Json -Depth 6")
     assert result.returncode == 0, result.stderr
     calls = json.loads(result.stdout[result.stdout.index('[\n'):])

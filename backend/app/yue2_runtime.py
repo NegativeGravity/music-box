@@ -28,6 +28,7 @@ class Yue2Runtime:
                         'models/sidecars/yue2-generation-config.json',
                         'models/sidecars/yue2-vae-config.json', 'models/sidecars/yue2-qwen.tiktoken'}
             ready = (manifest.get('verified') is True and manifest.get('runtime_release') == RELEASE and
+                     manifest.get('runtime_variant') == 'cpu-portable' and
                      manifest.get('model_revision') == REVISION and required <= {f['path'] for f in files})
             for item in files:
                 path = (self.root / item['path']).resolve()

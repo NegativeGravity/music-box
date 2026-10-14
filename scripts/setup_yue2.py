@@ -11,7 +11,8 @@ import zipfile
 RELEASE = 'v0.9.1'
 REVISION = 'cca74d8980c00f30ab8d52248a367c01ad633ec2'
 REPO = 'audio-cpp/Yue2-3B-GGUF'
-ZIP_HASH = '57a17896aba4447f088b27d2875e90a6563afd7860023d50da03a61fb143609f'
+RUNTIME_ARCHIVE = f'audio-{RELEASE}-bin-windows-x64-cpu-portable.zip'
+ZIP_HASH = '2fccc73dc97af84da1e81c3af545fa619348a46d023ea7d927ba80bc8680d2a0'
 MODEL_FILES = ['yue2-3b-q8_0.gguf', 'yue2-vae-f16.gguf',
                'sidecars/yue2-generation-config.json', 'sidecars/yue2-model-config.json',
                'sidecars/yue2-qwen.tiktoken', 'sidecars/yue2-vae-config.json']
@@ -42,32 +43,45 @@ def download(url, destination):
     return partial
 
 
+def install_runtime_archive(archive, native):
+    """Replace host-specific/corrupt files using the already verified archive."""
+    native = native.resolve()
+    with zipfile.ZipFile(archive) as zipped:
+        entries = zipped.infolist()
+        for entry in entries:
+            if not (native / entry.filename).resolve().is_relative_to(native):
+                raise ValueError('Unsafe runtime archive entry')
+        for entry in entries:
+            if entry.is_dir():
+                continue
+            path = native / entry.filename
+            data = zipped.read(entry)
+            expected = hashlib.sha256(data).hexdigest()
+            matches = path.is_file() and path.stat().st_size == entry.file_size
+            if matches:
+                matches = verify_file(path) == expected
+            if not matches:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                temporary = path.with_name(path.name + '.installing')
+                temporary.write_bytes(data)
+                temporary.replace(path)
+            verify_file(path, size=entry.file_size, sha256=expected)
+
+
 def prepare(root):
     root = root.resolve()
     root.mkdir(parents=True, exist_ok=True)
     invalid = root / 'runtime.json.tmp'
     invalid.write_text('{"verified":false}', encoding='utf-8')
     invalid.replace(root / 'runtime.json')
-    archive = root / 'audio-v0.9.1-windows-cpu.zip'
+    archive = root / RUNTIME_ARCHIVE
     if not archive.exists():
-        partial = download(f'https://github.com/0xShug0/audio.cpp/releases/download/{RELEASE}/audio-{RELEASE}-bin-windows-x64-cpu.zip', archive)
+        partial = download(f'https://github.com/0xShug0/audio.cpp/releases/download/{RELEASE}/{RUNTIME_ARCHIVE}', archive)
         verify_file(partial, sha256=ZIP_HASH)
         partial.replace(archive)
     verify_file(archive, sha256=ZIP_HASH)
     native = root / 'runtime'
-    if not (native / 'audiocpp_cli.exe').is_file():
-        with zipfile.ZipFile(archive) as zipped:
-            for entry in zipped.infolist():
-                if not (native / entry.filename).resolve().is_relative_to(native):
-                    raise ValueError('Unsafe runtime archive entry')
-            zipped.extractall(native)
-    # Hash the executable against the verified archive even when already extracted.
-    with zipfile.ZipFile(archive) as zipped:
-        for entry in zipped.infolist():
-            if not entry.is_dir():
-                path = native / entry.filename
-                expected = hashlib.sha256(zipped.read(entry)).hexdigest()
-                verify_file(path, size=entry.file_size, sha256=expected)
+    install_runtime_archive(archive, native)
     with urllib.request.urlopen(f'https://huggingface.co/api/models/{REPO}/revision/{REVISION}?blobs=true', timeout=60) as response:
         metadata = json.load(response)
     if metadata['sha'] != REVISION:
@@ -92,6 +106,7 @@ def prepare(root):
             verified.append({'path': path.relative_to(root).as_posix(), 'size': path.stat().st_size,
                              'mtime_ns': path.stat().st_mtime_ns, 'sha256': verify_file(path)})
     manifest = {'verified': True, 'engine': 'yue2', 'model': 'YuE2-3B-Q8', 'runtime_release': RELEASE,
+                'runtime_variant': 'cpu-portable', 'runtime_archive_sha256': ZIP_HASH,
                 'model_repository': REPO, 'model_revision': REVISION, 'device': 'cpu',
                 'files': verified, 'preliminary_generation_test': 'skipped at user request'}
     temp = root / 'runtime.json.tmp'

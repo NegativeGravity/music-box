@@ -69,18 +69,20 @@ This downloads model assets locally and queues background embedding upgrades. Mo
 
 ## AI Studio
 
-Install the pinned **audio.cpp v0.9.1 CPU runtime** and **YuE2-3B Q8** assets, then enable generation:
+Install the pinned **audio.cpp v0.9.1 portable CPU runtime** and **YuE2-3B Q8** assets, then enable generation:
 
 ```powershell
 .\scripts\setup_yue2.ps1 -PythonExe '.\.venv\Scripts\python.exe'
 .\scripts\start.ps1 -Dev -WithAiMusic
 ```
 
+If you installed an earlier runtime, rerun `setup_yue2.ps1`: it replaces incompatible native files with the portable build and reuses verified model weights.
+
 Choose style inspirations, describe the music, select vocals or instrumental, and add lyrics for a vocal take. The worker produces eight variations sequentially. Listen, choose your favorite, download its WAV, or save a private library copy. Cancellation preserves completed variations.
 
 | Setting | Current behavior |
 | --- | --- |
-| Runtime | Native Windows CPU; no cloud generation API |
+| Runtime | Native Windows baseline CPU build; no cloud generation API |
 | Variations | Eight distinct seeds; listener selects the result |
 | Languages | English and Chinese controls |
 | Duration | Panel default: up to 30 seconds; actual duration is measured |

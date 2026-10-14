@@ -35,7 +35,7 @@ try {
             $musicManifestPath = Join-Path $env:MUSICBOX_YUE2_ROOT 'runtime.json'
             if (-not (Test-Path -LiteralPath $musicManifestPath) -or -not (Test-Path -LiteralPath (Join-Path $env:MUSICBOX_YUE2_ROOT 'runtime/audiocpp_cli.exe'))) { throw 'Run scripts/setup_yue2.ps1 before enabling YuE2.' }
             $musicManifest = Get-Content -LiteralPath $musicManifestPath -Raw | ConvertFrom-Json
-            if (-not $musicManifest.verified -or $musicManifest.engine -ne 'yue2' -or $musicManifest.runtime_release -ne 'v0.9.1' -or $musicManifest.model_revision -ne 'cca74d8980c00f30ab8d52248a367c01ad633ec2') { throw 'YuE2 runtime manifest does not match the verified installation.' }
+            if (-not $musicManifest.verified -or $musicManifest.engine -ne 'yue2' -or $musicManifest.runtime_release -ne 'v0.9.1' -or $musicManifest.runtime_variant -ne 'cpu-portable' -or $musicManifest.model_revision -ne 'cca74d8980c00f30ab8d52248a367c01ad633ec2') { throw 'Run scripts/setup_yue2.ps1 to install the verified portable CPU runtime.' }
         } else {
             $env:MUSICBOX_AI_ENGINE_URL = "http://127.0.0.1:$AiPort"
             $musicEngine = & (Join-Path $PSScriptRoot 'start_ai_music.ps1') -Port $AiPort -DataRoot $AiDataRoot | ConvertFrom-Json
