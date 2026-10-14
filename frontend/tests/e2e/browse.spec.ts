@@ -1,0 +1,152 @@
+import { test, expect } from '@playwright/test';
+
+test('For you browses all songs until personalization is explicitly enabled', async ({ page }) => {
+  let recommendationRequests = 0;
+  page.on('request', request => { if (request.url().includes('/recommendations/for-you')) recommendationRequests++; });
+  await page.goto('/');
+  await page.getByTestId('track-card').first().waitFor();
+  const total = await page.evaluate(async () => (await (await fetch('/api/v1/library/tracks')).json()).tracks.length);
+  await expect(page.getByTestId('track-card')).toHaveCount(total);
+  expect(recommendationRequests).toBe(0);
+  const toggle = page.getByRole('button', { name: 'Personalize', exact: true });
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.getByRole('button', { name: 'Focus', exact: true })).toHaveCount(0);
+  await page.getByTestId('track-like').first().click();
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  expect(recommendationRequests).toBe(0);
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Focus', exact: true })).toBeVisible();
+  await expect.poll(() => recommendationRequests).toBeGreaterThan(0);
+  await page.reload();
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.getByTestId('track-card')).toHaveCount(total);
+  const before = recommendationRequests;
+  await page.reload();
+  await expect(page.getByTestId('track-card')).toHaveCount(total);
+  expect(recommendationRequests).toBe(before);
+});
+
+test('browse filters combine and clear without changing recommendation preferences', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('track-card').first().waitFor();
+  const before = await page.evaluate(async () => (await (await fetch('/api/v1/session')).json()).user.preferences);
+  const library = await page.evaluate(async () => (await (await fetch('/api/v1/library/tracks')).json()).tracks) as { genre: string; artist: string; source: string; playback_status: string; title: string }[];
+  const song = library.find(t => t.playback_status === 'ready' && t.genre === 'Pop')!;
+  expect(song).toBeTruthy();
+  await page.getByLabel('Filter by genre').selectOption(song.genre);
+  await page.getByLabel('Filter by artist').selectOption(song.artist);
+  await page.getByLabel('Filter by source').selectOption(song.source);
+  await page.getByLabel('Filter by playback status').selectOption('ready');
+  const matching = library.filter(t => t.genre === song.genre && t.artist === song.artist && t.source === song.source && t.playback_status === 'ready');
+  await expect(page.getByTestId('track-card')).toHaveCount(matching.length);
+  await expect(page.getByTestId('track-card').filter({ hasText: song.title }).first()).toBeVisible();
+  const after = await page.evaluate(async () => (await (await fetch('/api/v1/session')).json()).user.preferences);
+  expect(after).toEqual(before);
+  await page.getByRole('button', { name: 'Clear filters', exact: true }).click();
+  await page.getByLabel('Sort tracks').selectOption('title');
+  const titles = await page.locator('.track-info h3').allTextContents();
+  expect(titles.length).toBeGreaterThan(1);
+  expect(titles).toEqual([...titles].sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' })));
+  await page.getByPlaceholder('Search tracks or artists…').fill('no-such-song-xyz');
+  await expect(page.getByText('No tracks found', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Clear filters', exact: true }).click();
+  await expect(page.getByTestId('track-card').first()).toBeVisible();
+});
+
+test('a new upload is visible even when the previous browse search has no matches', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('track-card').first().waitFor();
+  await page.getByLabel('Filter by source').selectOption('demo');
+  await page.getByPlaceholder('Search tracks or artists…').fill('no-such-track-xyz');
+  await page.getByRole('button', { name: 'Upload track', exact: true }).first().click();
+  await page.locator('input[type=file]').setInputFiles('tests/fixtures/upload.wav');
+  const title = `FILTERED UPLOAD ${Date.now()}`;
+  await page.getByLabel('Track title').fill(title);
+  await page.getByRole('button', { name: 'Add to library', exact: true }).click();
+  const card = page.getByTestId('track-card').filter({ hasText: title });
+  await expect(card).toBeVisible();
+  await card.getByRole('button', { name: 'Track options' }).click();
+  await page.getByRole('button', { name: 'Delete from library', exact: true }).click();
+  await expect(card).toHaveCount(0);
+});
+
+test('Similar refresh keeps its original seed after disliking a suggested track', async ({ page }) => {
+  const seeds: string[] = [];
+  page.on('request', request => {
+    if (request.url().includes('/recommendations/similar/')) seeds.push(new URL(request.url()).pathname.split('/').pop()!);
+  });
+  await page.goto('/');
+  await page.getByTestId('track-card').first().getByRole('button', { name: 'Track options' }).click();
+  await page.getByRole('button', { name: 'Similar tracks', exact: true }).click();
+  await expect(page.locator('.section-heading h2')).toContainText('Sounds like');
+  await expect.poll(() => seeds.length).toBe(1);
+  await page.getByTestId('track-card').first().getByRole('button', { name: 'Track options' }).click();
+  await page.getByRole('button', { name: 'Recommend this less', exact: true }).click();
+  await expect.poll(() => seeds.length).toBe(2);
+  expect(seeds[1]).toBe(seeds[0]);
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect.poll(() => seeds.length).toBe(3);
+  expect(seeds[2]).toBe(seeds[0]);
+});
+
+test('a delayed dislike cannot request For you after personalization is disabled', async ({ page }) => {
+  let requests = 0;
+  page.on('request', request => { if (request.url().includes('/recommendations/for-you')) requests++; });
+  let release!: () => void;
+  let reached!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const feedbackStarted = new Promise<void>(resolve => { reached = resolve; });
+  await page.route('**/api/v1/feedback', async route => { reached(); await gate; await route.continue(); });
+  await page.goto('/');
+  const toggle = page.getByRole('button', { name: 'Personalize', exact: true });
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await page.getByTestId('track-card').first().getByRole('button', { name: 'Track options' }).click();
+  await page.getByRole('button', { name: 'Recommend this less', exact: true }).click();
+  await feedbackStarted;
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  await expect(toggle).toBeEnabled();
+  const before = requests;
+  release();
+  await expect(page.getByRole('status')).toContainText('Removed from future recommendations');
+  expect(requests).toBe(before);
+});
+
+test('personalization scores the full real catalog and blends active-session listening with likes', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('track-card').first().waitFor();
+  const library = await page.evaluate(async () => (await (await fetch('/api/v1/library/tracks')).json()).tracks) as { id: number; source: string; duration: number; playback_status: string }[];
+  const real = library.filter(t => t.source !== 'demo');
+  const pool = real.length ? real : library;
+  const ready = pool.filter(t => t.duration >= 30 && t.playback_status === 'ready');
+  expect(ready.length).toBeGreaterThan(1);
+  const firstResponse = page.waitForResponse(response => response.url().includes('/recommendations/for-you') && response.status() === 200);
+  await page.getByRole('button', { name: 'Personalize', exact: true }).click();
+  const first = await firstResponse;
+  const session = new URL(first.url()).searchParams.get('session_id');
+  expect(session).toBeTruthy();
+  const initial = await first.json();
+  expect(initial.candidate_count).toBe(pool.length);
+  expect(initial.scored_count).toBe(pool.length);
+  expect(initial.strategy).toBe('cold_start_diverse_audio');
+  await page.evaluate(async ({ liked, recent, session }) => {
+    const state = await (await fetch('/api/v1/session')).json();
+    const headers = { 'Content-Type': 'application/json', 'X-CSRF-Token': state.csrf_token };
+    const like = await fetch('/api/v1/feedback', { method: 'POST', headers, body: JSON.stringify({ track_id: liked, signal: 'like', event_id: crypto.randomUUID() }) });
+    if (!like.ok) throw new Error('Like fixture failed');
+    const listen = await fetch('/api/v1/events/batch', { method: 'POST', headers, body: JSON.stringify({ events: [{ event_id: crypto.randomUUID(), track_id: recent, event_type: 'play_end', session_id: session, played_ms: 60000 }] }) });
+    if (!listen.ok) throw new Error('Listening fixture failed');
+  }, { liked: ready[0].id, recent: ready[1].id, session });
+  const nextResponse = page.waitForResponse(response => response.url().includes('/recommendations/for-you') && response.status() === 200);
+  await page.getByRole('button', { name: 'Fresh picks', exact: true }).click();
+  const updated = await (await nextResponse).json();
+  expect(updated.profile_weights).toEqual({ long_term: .7, session: .3 });
+  expect(updated.profile_counts).toEqual({ long_term: 1, session: 1 });
+  expect(updated.candidate_count).toBe(pool.length);
+  expect(updated.scored_count).toBe(pool.length);
+  if (real.length) expect(updated.items.every((t: { source: string }) => t.source !== 'demo')).toBe(true);
+});

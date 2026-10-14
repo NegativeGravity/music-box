@@ -1,0 +1,14 @@
+import { chromium } from '@playwright/test';
+import { mkdir } from 'node:fs/promises';
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
+const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+await page.goto('http://127.0.0.1:3000');
+await page.getByTestId('track-card').first().waitFor();
+await page.evaluate(() => document.fonts.ready);
+await mkdir('../docs/implementation/previews', { recursive: true });
+await page.screenshot({ path: '../docs/implementation/previews/desktop.png', fullPage: false });
+await page.setViewportSize({ width: 390, height: 844 });
+await page.waitForTimeout(350);
+await page.screenshot({ path: '../docs/implementation/previews/mobile.png', fullPage: false });
+console.log('Desktop and mobile screenshots saved');
+await browser.close();

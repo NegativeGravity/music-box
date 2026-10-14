@@ -1,0 +1,5 @@
+YuE2 ABC parser, copied from multimodal-art-projection/YuE.
+Source revision: 1647252d68b70cbead046ffd3f7caf036dde47ee
+Original source: skills/yue2-music/scripts/abc_tools.py
+Copyright (c) 2026 the YuE2 authors. Apache License 2.0; see YUE2_LICENSE.
+The parser is used as a utility; no agent skill or external service is invoked.
